@@ -11,7 +11,7 @@ std::random_device rd;
 std::mt19937 gen(rd());
 
 template<uint8_t numberOfLines, uint8_t numberOfColumns>
-class MotsMeles
+class PuzzleWords
 {
 private:
     static constexpr uint8_t invalidValue{0xFF};
@@ -257,7 +257,7 @@ private:
         }
     }
 
-    void displayGrid(const std::vector<uint32_t> &pickedUpWords)
+    void displayGrid()
     {
         std::cout << "words(" << pickedUpWords.size() << "): " << std::endl;
         for (const auto &word : pickedUpWords)
@@ -278,7 +278,7 @@ private:
     }
 
 public:
-    MotsMeles()
+    PuzzleWords()
     {
         for (const auto &word : listWords)
         {
@@ -333,6 +333,6 @@ public:
         }
         completeGridWithRandomLetters(arrayWords);
 
-        displayGrid(pickedUpWords);
+        displayGrid();
     }
 };
