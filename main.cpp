@@ -5,20 +5,20 @@
 int main()
 {
     constexpr uint8_t numberOfLinesS{8};
-    constexpr uint8_t numberOfColumnsS{9};
+    constexpr uint8_t numberOfColumnsS{8};
 
     PuzzleWords<numberOfLinesS, numberOfColumnsS> puzzleWords{};
 
     puzzleWords.generateGridOfWords();
 
-    for(const auto& word : puzzleWords.getWordsOfGrid())
+    for (const auto &word : puzzleWords.getWordsOfGrid())
     {
-        std::cout << listWords[word] << std::endl;
+        std::cout << word << std::endl;
     }
 
-    for(uint8_t line{}; line < numberOfLinesS; line++)
+    for (uint8_t line{}; line < numberOfLinesS; line++)
     {
-        for(uint8_t column{}; column < numberOfColumnsS; column++)
+        for (uint8_t column{}; column < numberOfColumnsS; column++)
         {
             std::cout << puzzleWords.getGrid().at(line).at(column) << " ";
         }

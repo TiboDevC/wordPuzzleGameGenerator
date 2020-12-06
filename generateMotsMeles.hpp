@@ -37,6 +37,7 @@ private:
 
     uint32_t numberOfWordsInDictionnary{};
     std::vector<uint32_t> pickedUpWords{};
+    uint32_t numberOfWordsToFound{0xFFFFFFFF};
 
     struct Grid
     {
@@ -75,15 +76,15 @@ private:
         {
             case Direction::line:
                 maxLineSize = numberOfLines - 1;
-                maxColumnSize = numberOfColumns - minWordlength - 1;
+                maxColumnSize = numberOfColumns - minWordlength;
                 break;
             case Direction::column:
-                maxLineSize = numberOfLines - minWordlength - 1;
+                maxLineSize = numberOfLines - minWordlength;
                 maxColumnSize = numberOfColumns - 1;
                 break;
             case Direction::diagonal:
-                maxLineSize = numberOfLines - minWordlength - 1;
-                maxColumnSize = numberOfColumns - minWordlength - 1;
+                maxLineSize = numberOfLines - minWordlength;
+                maxColumnSize = numberOfColumns - minWordlength;
                 break;
             case invalid:
             default:
@@ -156,9 +157,8 @@ private:
             default:
                 break;
         }
-        maxSize -= 1;
 
-        if (maxSize > minWordlength)
+        if (maxSize >= minWordlength)
         {
             std::uniform_int_distribution<> randomSize(minWordlength, maxSize);
             word.length = randomSize(gen);
@@ -278,8 +278,13 @@ private:
     }
 
 public:
-    PuzzleWords()
+    explicit PuzzleWords(const uint32_t &numberOfWordsToGenerate = 0xFFFFFFFF)
     {
+        static_assert(numberOfColumns >= minWordlength,
+                      "please increase number of column or decrease min size of words to be found");
+        static_assert(numberOfLines >= minWordlength,
+                      "please increase number of lines or decrease min size of words to be found");
+        numberOfWordsToFound = numberOfWordsToGenerate;
         for (const auto &word : listWords)
         {
             (void) word;
@@ -287,9 +292,14 @@ public:
         }
     }
 
-    [[nodiscard]] const std::vector<uint32_t> &getWordsOfGrid() const
+    [[nodiscard]] std::vector<std::string> getWordsOfGrid() const
     {
-        return pickedUpWords;
+        std::vector<std::string> listOfWordsInGrid{};
+        for (const auto &wordNumber : pickedUpWords)
+        {
+            listOfWordsInGrid.emplace_back(listWords[wordNumber]);
+        }
+        return listOfWordsInGrid;
     }
 
     [[nodiscard]] const std::array<std::array<uint8_t, numberOfColumns>, numberOfLines> &getGrid() const
@@ -304,11 +314,11 @@ public:
         Grid arrayWords{};
 
         std::uniform_int_distribution<> randomWordGen(0, numberOfWordsInDictionnary - 1);
-        std::uniform_int_distribution<> randomDirectionGen(0, Direction::diagonal - 1);
+        std::uniform_int_distribution<> randomDirectionGen(0, Direction::invalid - 1);
 
         uint32_t tryToFindWord{0};
 
-        while (tryToFindWord < maxNumberOfTry)
+        while (tryToFindWord < maxNumberOfTry && pickedUpWords.size() < numberOfWordsToFound)
         {
             tryToFindWord++;
             WordParam word{};
@@ -333,6 +343,6 @@ public:
         }
         completeGridWithRandomLetters(arrayWords);
 
-        displayGrid();
+        // displayGrid();
     }
 };
