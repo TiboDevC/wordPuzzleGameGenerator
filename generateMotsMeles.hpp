@@ -310,6 +310,8 @@ public:
     void generateGridOfWords()
     {
         constexpr uint32_t maxNumberOfTry{numberOfLines * numberOfColumns * 2};
+        gridWords = Grid{};
+        pickedUpWords.clear();
 
         Grid arrayWords{};
 
