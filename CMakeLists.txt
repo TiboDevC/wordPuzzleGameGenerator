@@ -1,8 +1,9 @@
 cmake_minimum_required(VERSION 3.17)
-project(puzzleWord)
+project(puzzleWord C CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+add_executable(${PROJECT_NAME}_c main.c)
+add_executable(${PROJECT_NAME}_cpp main.cpp)
 
-add_executable(${PROJECT_NAME} main.cpp)
-
-target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -pedantic -Werror)
+target_compile_options(${PROJECT_NAME}_c PRIVATE -Wall -Wextra -pedantic -Werror)
+target_compile_options(${PROJECT_NAME}_cpp PRIVATE -Wall -Wextra -pedantic -Werror)
+target_compile_features(${PROJECT_NAME}_cpp PRIVATE cxx_std_20)

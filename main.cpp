@@ -11,6 +11,7 @@ int main()
 
     puzzleWords.generateGridOfWords();
 
+	std::cout << "Number of words: " << puzzleWords.getWordsOfGrid().size() << std::endl;
     for (const auto &word : puzzleWords.getWordsOfGrid())
     {
         std::cout << word << std::endl;
