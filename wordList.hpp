@@ -1,6 +1,6 @@
 #pragma once
 
-const char *listWords[] = {
+constexpr const char *listWords[] = {
         "abaisse",
         "abaissement",
         "abaisser",

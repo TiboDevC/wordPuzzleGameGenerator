@@ -3,7 +3,6 @@
 #include <iostream>
 #include <array>
 #include <random>
-#include <cstring>
 
 #include "wordList.hpp"
 
