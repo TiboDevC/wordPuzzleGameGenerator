@@ -3,11 +3,12 @@
 #include <iostream>
 #include <array>
 #include <random>
+#include <algorithm>
+#include <vector>
+#include <cstring>
 
 #include "wordList.hpp"
 
-std::random_device rd;
-std::mt19937 gen(rd());
 
 template<uint8_t numberOfLines, uint8_t numberOfColumns>
 class PuzzleWords
@@ -15,6 +16,14 @@ class PuzzleWords
 private:
     static constexpr uint8_t invalidValue{0xFF};
     static constexpr uint8_t minWordlength{4};
+    static constexpr uint8_t maxNumberOfTriesToFindBox{100};
+    static constexpr uint8_t maxNumberOfTriesToPickWord{20};
+
+    static std::mt19937 &getRandomGenerator() {
+        static thread_local std::random_device rd;
+        static thread_local std::mt19937 gen(rd());
+        return gen;
+    }
 
     enum Direction
     {
@@ -34,9 +43,9 @@ private:
         uint32_t id{invalidValue};
     };
 
-    uint32_t numberOfWordsInDictionnary{};
+    uint32_t numberOfWordsInDictionary{};
     std::vector<uint32_t> pickedUpWords{};
-    uint32_t numberOfWordsToFound{0xFFFFFFFF};
+    uint32_t numberOfWordsToFind{0xFFFFFFFF};
 
     struct Grid
     {
@@ -65,9 +74,6 @@ private:
         word.line = invalidValue;
         word.column = invalidValue;
 
-        uint8_t randomColumn{invalidValue};
-        uint8_t randomLine{invalidValue};
-
         uint8_t maxLineSize{};
         uint8_t maxColumnSize{};
 
@@ -90,20 +96,21 @@ private:
                 break;
         }
 
-        std::uniform_int_distribution<> randomLineNumber(0, maxLineSize);
-        std::uniform_int_distribution<> randomColumnNumber(0, maxColumnSize);
+        std::uniform_int_distribution<uint8_t> randomLineNumber(0, maxLineSize);
+        std::uniform_int_distribution<uint8_t> randomColumnNumber(0, maxColumnSize);
 
+        auto &gen = getRandomGenerator();
         uint8_t numberOfTry{};
         do
         {
             numberOfTry++;
-            randomLine = randomLineNumber(gen);
-            randomColumn = randomColumnNumber(gen);
-        } while ((arrayWords.at(randomLine, randomColumn) != 0) and (numberOfTry < numberOfLines * numberOfColumns));
-        if (numberOfTry < numberOfLines * numberOfColumns)
-        {
-            word.line = randomLine;
-            word.column = randomColumn;
+            word.line = randomLineNumber(gen);
+            word.column = randomColumnNumber(gen);
+        } while ((arrayWords.at(word.line, word.column) != 0) && (numberOfTry < numberOfLines * numberOfColumns));
+
+        if (numberOfTry >= numberOfLines * numberOfColumns) {
+            word.line = invalidValue;
+            word.column = invalidValue;
         }
     }
 
@@ -159,7 +166,8 @@ private:
 
         if (maxSize >= minWordlength)
         {
-            std::uniform_int_distribution<> randomSize(minWordlength, maxSize);
+            std::uniform_int_distribution<uint8_t> randomSize(minWordlength, maxSize);
+            auto &gen = getRandomGenerator();
             word.length = randomSize(gen);
         }
     }
@@ -168,19 +176,16 @@ private:
     {
         if (!listPotentialWords.empty())
         {
-            constexpr uint8_t maxNumberOfTry{20};
             uint32_t choosenWord{invalidValue};
             uint8_t numberOfTry{0};
-            do
-            {
-                std::uniform_int_distribution<> randomWordGen(0, listPotentialWords.size() - 1);
+            auto &gen = getRandomGenerator();
+            do {
+                std::uniform_int_distribution<size_t> randomWordGen(0, listPotentialWords.size() - 1);
                 choosenWord = randomWordGen(gen);
                 numberOfTry++;
             } while (std::find(pickedUpWords.begin(), pickedUpWords.end(), listPotentialWords.at(choosenWord)) !=
-                     pickedUpWords.end() and
-                     numberOfTry < maxNumberOfTry);
-            if (numberOfTry < maxNumberOfTry)
-            {
+                     pickedUpWords.end() && numberOfTry < maxNumberOfTriesToPickWord);
+            if (numberOfTry < maxNumberOfTriesToPickWord) {
                 word.id = listPotentialWords.at(choosenWord);
             }
         }
@@ -189,11 +194,11 @@ private:
     void findWordAccordingToConstraints(const std::vector<std::array<uint8_t, 2>> &constraints, WordParam &word)
     {
         std::vector<uint32_t> listPotentialWords;
+        listPotentialWords.reserve(100);
         uint32_t wordIndex{};
         word.id = invalidValue;
 
-        for (auto &listWord : listWords)
-        {
+        for (const auto &listWord: listWords) {
             if (std::strlen(listWord) == word.length)
             {
                 bool isConstraintOk{true};
@@ -240,6 +245,7 @@ private:
     void completeGridWithRandomLetters(const Grid &arrayWords)
     {
         std::uniform_int_distribution<> randomWord('a', 'z');
+        auto& gen = getRandomGenerator();
 
         for (uint8_t line{}; line < numberOfLines; line++)
         {
@@ -283,19 +289,18 @@ public:
                       "please increase number of column or decrease min size of words to be found");
         static_assert(numberOfLines >= minWordlength,
                       "please increase number of lines or decrease min size of words to be found");
-        numberOfWordsToFound = numberOfWordsToGenerate;
-        for (const auto &word : listWords)
-        {
+        numberOfWordsToFind = numberOfWordsToGenerate;
+        for (const auto &word: listWords) {
             (void) word;
-            numberOfWordsInDictionnary++;
+            numberOfWordsInDictionary++;
         }
     }
 
     [[nodiscard]] std::vector<std::string> getWordsOfGrid() const
     {
         std::vector<std::string> listOfWordsInGrid{};
-        for (const auto &wordNumber : pickedUpWords)
-        {
+        listOfWordsInGrid.reserve(pickedUpWords.size());
+        for (const auto &wordNumber: pickedUpWords) {
             listOfWordsInGrid.emplace_back(listWords[wordNumber]);
         }
         return listOfWordsInGrid;
@@ -314,13 +319,13 @@ public:
 
         Grid arrayWords{};
 
-        std::uniform_int_distribution<> randomWordGen(0, numberOfWordsInDictionnary - 1);
-        std::uniform_int_distribution<> randomDirectionGen(0, Direction::invalid - 1);
+        auto& gen = getRandomGenerator();
+        std::uniform_int_distribution<uint32_t> randomWordGen(0, numberOfWordsInDictionary - 1);
+        std::uniform_int_distribution<uint8_t> randomDirectionGen(0, Direction::invalid - 1);
 
         uint32_t tryToFindWord{0};
 
-        while (tryToFindWord < maxNumberOfTry && pickedUpWords.size() < numberOfWordsToFound)
-        {
+        while (tryToFindWord < maxNumberOfTry && pickedUpWords.size() < numberOfWordsToFind) {
             tryToFindWord++;
             WordParam word{};
 
@@ -328,8 +333,7 @@ public:
             selectRandomBox(arrayWords, word);
             selectRandomSize(word);
 
-            if (word.length != invalidValue and word.line != invalidValue and word.column != invalidValue)
-            {
+            if (word.length != invalidValue && word.line != invalidValue && word.column != invalidValue) {
                 const auto constraints = buildWordConstraints(arrayWords, word);
 
                 findWordAccordingToConstraints(constraints, word);
