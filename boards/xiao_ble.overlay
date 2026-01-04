@@ -1,0 +1,80 @@
+/*
+ * Copyright (c) 2026
+ * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Device tree overlay for Seeed Studio XIAO nRF52840
+ * with "ePaper Driver Board for XIAO V2"
+ * and 7.5" e-Paper (GDEW075T7 / WFT0583CZ61)
+ * 
+ * Pin mapping from Seeed documentation:
+ * https://wiki.seeedstudio.com/xiao_eink_expansion_board_v2/
+ * 
+ * - D0 (P0.02) = RESET
+ * - D1 (P0.03) = CS
+ * - D2 (P0.28) = BUSY
+ * - D3 (P0.29) = DC
+ * - D8 (P1.13) = SCK  (SPI2)
+ * - D10 (P1.15) = MOSI (SPI2)
+ */
+
+&pinctrl {
+	spi2_default: spi2_default {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 1, 13)>,
+			        <NRF_PSEL(SPIM_MOSI, 1, 15)>;
+		};
+	};
+
+	spi2_sleep: spi2_sleep {
+		group1 {
+			psels = <NRF_PSEL(SPIM_SCK, 1, 13)>,
+			        <NRF_PSEL(SPIM_MOSI, 1, 15)>;
+			low-power-enable;
+		};
+	};
+};
+
+&spi2 {
+	compatible = "nordic,nrf-spim";
+	status = "okay";
+	pinctrl-0 = <&spi2_default>;
+	pinctrl-1 = <&spi2_sleep>;
+	pinctrl-names = "default", "sleep";
+	cs-gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;  /* D1 = CS */
+};
+
+/ {
+	mipi_dbi_epaper {
+		compatible = "zephyr,mipi-dbi-spi";
+		spi-dev = <&spi2>;
+		dc-gpios = <&gpio0 29 GPIO_ACTIVE_HIGH>;      /* D3 = DC */
+		reset-gpios = <&gpio0 2 GPIO_ACTIVE_LOW>;     /* D0 = RESET */
+		write-only;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		uc8179: uc8179@0 {
+			compatible = "gooddisplay,gdew075t7", "ultrachip,uc8179";
+			reg = <0>;
+			mipi-max-frequency = <4000000>;
+			width = <800>;
+			height = <480>;
+			busy-gpios = <&gpio0 28 GPIO_ACTIVE_LOW>;     /* D2 = BUSY */
+			
+			/* Configuration from Waveshare reference driver */
+			softstart = [17 17 17 17];
+			
+			full {
+				pwr = [07 07 3f 3f];
+				cdi = <07>;
+				tcon = <0x22>;
+			};
+		};
+	};
+};
+
+/ {
+	chosen {
+		zephyr,display = &uc8179;
+	};
+};
