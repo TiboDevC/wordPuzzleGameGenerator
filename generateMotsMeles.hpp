@@ -86,28 +86,47 @@ private:
         word.line = invalidValue;
         word.column = invalidValue;
 
+        // If length is not set, we can't determine the box
+        if (word.length == invalidValue) {
+            return;
+        }
+
+        constexpr uint8_t minLineSize{1}; // Start at 1 to avoid edge (line 0)
+        constexpr uint8_t minColumnSize{1}; // Start at 1 to avoid edge (column 0)
         uint8_t maxLineSize{};
         uint8_t maxColumnSize{};
 
         switch (word.direction) {
             case Direction::Line:
+                if (word.length > numberOfColumns - 1) // -1 because we start at column 1
+                {
+                    return;
+                }
                 maxLineSize = numberOfLines - 1;
-                maxColumnSize = numberOfColumns - minWordlength;
+                maxColumnSize = numberOfColumns - word.length;
                 break;
             case Direction::Column:
-                maxLineSize = numberOfLines - minWordlength;
+                if (word.length > numberOfLines - 1) // -1 because we start at line 1
+                {
+                    return;
+                }
+                maxLineSize = numberOfLines - word.length;
                 maxColumnSize = numberOfColumns - 1;
                 break;
             case Direction::Diagonal:
-                maxLineSize = numberOfLines - minWordlength;
-                maxColumnSize = numberOfColumns - minWordlength;
+                if (word.length > numberOfLines - 1 || word.length > numberOfColumns - 1) // -1 for both
+                {
+                    return;
+                }
+                maxLineSize = numberOfLines - word.length;
+                maxColumnSize = numberOfColumns - word.length;
                 break;
             case Direction::Invalid:
-                break;
+                return;
         }
 
-        std::uniform_int_distribution<uint8_t> randomLineNumber(0, maxLineSize);
-        std::uniform_int_distribution<uint8_t> randomColumnNumber(0, maxColumnSize);
+        std::uniform_int_distribution<uint8_t> randomLineNumber(minLineSize, maxLineSize);
+        std::uniform_int_distribution<uint8_t> randomColumnNumber(minColumnSize, maxColumnSize);
 
         auto &gen = getRandomGenerator();
         uint8_t numberOfTry{};
@@ -349,7 +368,6 @@ public:
     [[nodiscard]] static constexpr uint8_t getMinWordLength() { return minWordlength; }
 
     void generateGridOfWords() {
-        constexpr uint32_t maxNumberOfTry{numberOfLines * numberOfColumns * 2};
         gridWords = Grid{};
         pickedUpWords.clear();
         wordsInfo.clear();
@@ -360,26 +378,63 @@ public:
         auto &gen = getRandomGenerator();
         std::uniform_int_distribution<uint8_t> randomDirectionGen(0, static_cast<uint8_t>(Direction::Invalid) - 1);
 
-        uint32_t tryToFindWord{0};
+        // Calculate max possible word length
+        const uint8_t maxPossibleLength = std::max(numberOfLines, numberOfColumns);
 
-        while (tryToFindWord < maxNumberOfTry && pickedUpWords.size() < numberOfWordsToFind) {
-            tryToFindWord++;
-            WordParam word{};
+        // Try to place words starting from longest to shortest
+        for (uint8_t targetLength = maxPossibleLength;
+             targetLength >= minWordlength && pickedUpWords.size() < numberOfWordsToFind; --targetLength) {
+            constexpr uint8_t attemptsPerLength = 30;
 
-            word.direction = static_cast<Direction>(randomDirectionGen(gen));
-            selectRandomBox(arrayWords, word);
-            selectRandomSize(word);
+            for (uint8_t attempt = 0; attempt < attemptsPerLength && pickedUpWords.size() < numberOfWordsToFind; attempt
+                 ++) {
+                WordParam word{};
+                word.direction = static_cast<Direction>(randomDirectionGen(gen));
+                word.length = targetLength;
 
-            if (word.length != invalidValue && word.line != invalidValue && word.column != invalidValue) {
-                const auto constraints = buildWordConstraints(arrayWords, word);
+                // Try to find a valid position for this word length
+                constexpr uint8_t maxPositionTries = 100;
+                for (uint8_t posTry = 0; posTry < maxPositionTries; posTry++) {
+                    selectRandomBox(arrayWords, word);
 
-                findWordAccordingToConstraints(constraints, word);
-                if (word.id != invalidValue) {
-                    fillGridWithWord(word, arrayWords);
-                    pickedUpWords.push_back(word.id);
+                    if (word.line == invalidValue || word.column == invalidValue) {
+                        continue;
+                    }
+
+                    // Check if the word fits in the grid
+                    bool fits = false;
+                    switch (word.direction) {
+                        case Direction::Line:
+                            fits = (word.column + targetLength <= numberOfColumns);
+                            break;
+                        case Direction::Column:
+                            fits = (word.line + targetLength <= numberOfLines);
+                            break;
+                        case Direction::Diagonal:
+                            fits = (word.line + targetLength <= numberOfLines) &&
+                                   (word.column + targetLength <= numberOfColumns);
+                            break;
+                        case Direction::Invalid:
+                            break;
+                    }
+
+                    if (!fits) {
+                        continue;
+                    }
+
+                    // Build constraints and find a matching word
+                    const auto constraints = buildWordConstraints(arrayWords, word);
+                    findWordAccordingToConstraints(constraints, word);
+
+                    if (word.id != invalidValue) {
+                        fillGridWithWord(word, arrayWords);
+                        pickedUpWords.push_back(word.id);
+                        break; // Successfully placed a word, move to next attempt
+                    }
                 }
             }
         }
+
         completeGridWithRandomLetters(arrayWords);
     }
 };
