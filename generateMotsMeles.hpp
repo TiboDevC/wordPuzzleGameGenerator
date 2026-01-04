@@ -15,8 +15,7 @@ class PuzzleWords {
 private:
     static constexpr uint8_t invalidValue{0xFF};
     static constexpr uint8_t minWordlength{4};
-    static constexpr uint8_t maxNumberOfTriesToFindBox{100};
-    static constexpr uint8_t maxNumberOfTriesToPickWord{20};
+    static constexpr uint16_t maxNumberOfTriesToPickWord{5000};
     static constexpr size_t potentialWordsReserveSize{100};
 
     static std::mt19937 &getRandomGenerator() {
