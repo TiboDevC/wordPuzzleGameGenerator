@@ -1,6 +1,10 @@
 #pragma once
 
-constexpr const char *listWords[] = {
+#include <array>
+#include <string_view>
+
+constexpr std::array<std::string_view, 20523> listWords = {
+    {
         "abaisse",
         "abaissement",
         "abaisser",
@@ -20524,4 +20528,4 @@ constexpr const char *listWords[] = {
         "zoologie",
         "zozoter",
         "zygote"
-};
+}};

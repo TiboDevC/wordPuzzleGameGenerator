@@ -212,8 +212,7 @@ private:
         uint32_t wordIndex{};
         word.id = invalidValue;
 
-        for (const auto &listWord: listWords) {
-            const std::string_view wordView{listWord};
+        for (const auto &wordView: listWords) {
             if (wordView.length() == word.length) {
                 bool isConstraintOk{true};
                 for (const auto &constraint : constraints)
@@ -236,7 +235,7 @@ private:
     void fillGridWithWord(const WordParam &word, Grid &arrayWords)
     {
         WordInfo info;
-        const std::string_view wordStr{listWords[word.id]};
+        const std::string_view wordStr = listWords.at(word.id);
         info.word = wordStr;
         info.startLine = word.line;
         info.startColumn = word.column;
@@ -313,10 +312,7 @@ public:
         static_assert(numberOfLines >= minWordlength,
                       "please increase number of lines or decrease min size of words to be found");
         numberOfWordsToFind = numberOfWordsToGenerate;
-        for (const auto &word: listWords) {
-            (void) word;
-            numberOfWordsInDictionary++;
-        }
+        numberOfWordsInDictionary = listWords.size();
     }
 
     [[nodiscard]] std::vector<std::string> getWordsOfGrid() const
