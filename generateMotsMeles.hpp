@@ -5,7 +5,7 @@
 #include <random>
 #include <algorithm>
 #include <vector>
-#include <cstring>
+#include <string_view>
 
 #include "wordList.hpp"
 
@@ -32,7 +32,8 @@ private:
         diagonal,
         invalid
     };
-    typedef std::vector<std::array<uint8_t, 2>> Constraints; // first is letter start, second is the letter
+
+    typedef std::vector<std::array<uint8_t, 2> > Constraints;
 
     struct WordParam
     {
@@ -43,8 +44,22 @@ private:
         uint32_t id{invalidValue};
     };
 
+public:
+    struct WordInfo {
+        std::string_view word{};
+        uint8_t startLine{0};
+        uint8_t startColumn{0};
+        uint8_t endLine{0};
+        uint8_t endColumn{0};
+        uint8_t length{0};
+        Direction direction{Direction::invalid};
+        bool isStrikethrough{false};
+    };
+
+private:
     uint32_t numberOfWordsInDictionary{};
     std::vector<uint32_t> pickedUpWords{};
+    std::vector<WordInfo> wordsInfo{};
     uint32_t numberOfWordsToFind{0xFFFFFFFF};
 
     struct Grid
@@ -199,13 +214,12 @@ private:
         word.id = invalidValue;
 
         for (const auto &listWord: listWords) {
-            if (std::strlen(listWord) == word.length)
-            {
+            const std::string_view wordView{listWord};
+            if (wordView.length() == word.length) {
                 bool isConstraintOk{true};
                 for (const auto &constraint : constraints)
                 {
-                    if (listWord[constraint.at(0)] != constraint.at(1))
-                    {
+                    if (wordView.at(constraint.at(0)) != constraint.at(1)) {
                         isConstraintOk = false;
                         break;
                     }
@@ -222,18 +236,47 @@ private:
 
     void fillGridWithWord(const WordParam &word, Grid &arrayWords)
     {
+        WordInfo info;
+        const std::string_view wordStr{listWords[word.id]};
+        info.word = wordStr;
+        info.startLine = word.line;
+        info.startColumn = word.column;
+        info.length = word.length;
+        info.direction = word.direction;
+        info.isStrikethrough = false;
+
+        switch (word.direction) {
+            case Direction::line:
+                info.endLine = word.line;
+                info.endColumn = word.column + word.length - 1;
+                break;
+            case Direction::column:
+                info.endLine = word.line + word.length - 1;
+                info.endColumn = word.column;
+                break;
+            case Direction::diagonal:
+                info.endLine = word.line + word.length - 1;
+                info.endColumn = word.column + word.length - 1;
+                break;
+            case invalid:
+            default:
+                break;
+        }
+
+        wordsInfo.push_back(info);
+
         for (uint8_t sizeIndex{}; sizeIndex < word.length; sizeIndex++)
         {
             switch (word.direction)
             {
                 case Direction::line:
-                    arrayWords.at(word.line, word.column + sizeIndex) = listWords[word.id][sizeIndex];
+                    arrayWords.at(word.line, word.column + sizeIndex) = wordStr.at(sizeIndex);
                     break;
                 case Direction::column:
-                    arrayWords.at(word.line + sizeIndex, word.column) = listWords[word.id][sizeIndex];
+                    arrayWords.at(word.line + sizeIndex, word.column) = wordStr.at(sizeIndex);
                     break;
                 case Direction::diagonal:
-                    arrayWords.at(word.line + sizeIndex, word.column + sizeIndex) = listWords[word.id][sizeIndex];
+                    arrayWords.at(word.line + sizeIndex, word.column + sizeIndex) = wordStr.at(sizeIndex);
                     break;
                 case invalid:
                 default:
@@ -264,10 +307,9 @@ private:
 
     void displayGrid()
     {
-        std::cout << "words(" << pickedUpWords.size() << "): " << std::endl;
-        for (const auto &word : pickedUpWords)
-        {
-            std::cout << "- " << listWords[word] << std::endl;
+        std::cout << "words(" << wordsInfo.size() << "): " << std::endl;
+        for (const auto &info: wordsInfo) {
+            std::cout << "- " << info.word << std::endl;
         }
 
         std::cout << "full grid:" << std::endl;
@@ -299,9 +341,9 @@ public:
     [[nodiscard]] std::vector<std::string> getWordsOfGrid() const
     {
         std::vector<std::string> listOfWordsInGrid{};
-        listOfWordsInGrid.reserve(pickedUpWords.size());
-        for (const auto &wordNumber: pickedUpWords) {
-            listOfWordsInGrid.emplace_back(listWords[wordNumber]);
+        listOfWordsInGrid.reserve(wordsInfo.size());
+        for (const auto &info: wordsInfo) {
+            listOfWordsInGrid.emplace_back(info.word);
         }
         return listOfWordsInGrid;
     }
@@ -311,11 +353,59 @@ public:
         return gridWords.getElement();
     }
 
-    void generateGridOfWords()
-    {
+    [[nodiscard]] const std::vector<WordInfo> &getWordsInfo() const {
+        return wordsInfo;
+    }
+
+    [[nodiscard]] size_t getWordCount() const {
+        return wordsInfo.size();
+    }
+
+    [[nodiscard]] size_t getRemainingWordCount() const {
+        size_t count = 0;
+        for (const auto &info: wordsInfo) {
+            if (!info.isStrikethrough) count++;
+        }
+        return count;
+    }
+
+    bool strikethroughWord(size_t wordIndex) {
+        if (wordIndex < wordsInfo.size()) {
+            wordsInfo.at(wordIndex).isStrikethrough = true;
+            return true;
+        }
+        return false;
+    }
+
+    [[nodiscard]] int getNextWordToStrikethrough() const {
+        for (size_t i = 0; i < wordsInfo.size(); i++) {
+            if (!wordsInfo.at(i).isStrikethrough) {
+                return static_cast<int>(i);
+            }
+        }
+        return -1;
+    }
+
+    [[nodiscard]] bool areAllWordsStrikethrough() const {
+        return getRemainingWordCount() == 0;
+    }
+
+    void resetStrikethrough() {
+        for (auto &info: wordsInfo) {
+            info.isStrikethrough = false;
+        }
+    }
+
+    [[nodiscard]] static constexpr uint8_t getNumberOfLines() { return numberOfLines; }
+    [[nodiscard]] static constexpr uint8_t getNumberOfColumns() { return numberOfColumns; }
+    [[nodiscard]] static constexpr uint8_t getMinWordLength() { return minWordlength; }
+
+    void generateGridOfWords() {
         constexpr uint32_t maxNumberOfTry{numberOfLines * numberOfColumns * 2};
         gridWords = Grid{};
         pickedUpWords.clear();
+        wordsInfo.clear();
+        wordsInfo.reserve(numberOfWordsToFind);
 
         Grid arrayWords{};
 
@@ -347,7 +437,5 @@ public:
             }
         }
         completeGridWithRandomLetters(arrayWords);
-
-        // displayGrid();
     }
 };
