@@ -1,18 +1,21 @@
 #include <iostream>
 #include "generateMotsMeles.hpp"
 
-void displayGrid(const PuzzleWords<8, 8> &puzzle) {
+constexpr uint8_t gridSize = 5;
+using PuzzleType = PuzzleWords<gridSize, gridSize>;
+
+void displayGrid(const PuzzleType &puzzle) {
     const auto &grid = puzzle.getGrid();
     std::cout << "\n=== Grid ===" << std::endl;
-    for (uint8_t line = 0; line < 8; line++) {
-        for (uint8_t column = 0; column < 8; column++) {
+    for (uint8_t line = 0; line < gridSize; line++) {
+        for (uint8_t column = 0; column < gridSize; column++) {
             std::cout << static_cast<char>(grid.at(line).at(column)) << " ";
         }
         std::cout << std::endl;
     }
 }
 
-void displayWordsInfo(const PuzzleWords<8, 8> &puzzle) {
+void displayWordsInfo(const PuzzleType &puzzle) {
     const auto &wordsInfo = puzzle.getWordsInfo();
     std::cout << "\n=== Words to find (" << puzzle.getWordCount() << " words) ===" << std::endl;
 
@@ -29,14 +32,13 @@ void displayWordsInfo(const PuzzleWords<8, 8> &puzzle) {
 }
 
 int main() {
-    constexpr uint8_t gridSize = 8;
     constexpr uint8_t maxWords = 100;
 
-    PuzzleWords<gridSize, gridSize> puzzle{maxWords};
+    PuzzleType puzzle{maxWords};
 
     std::cout << "=== Word Search Generator ===" << std::endl;
     std::cout << "Generating a " << static_cast<int>(gridSize)
-            << "x" << static_cast<int>(gridSize) << " grid..." << std::endl;
+              << "x" << static_cast<int>(gridSize) << " grid..." << std::endl;
 
     puzzle.generateGridOfWords();
 
@@ -49,7 +51,7 @@ int main() {
     int count = 0;
     while (!puzzle.areAllWordsStrikethrough() && count < 3) // Strikethrough only 3 words for the demo
     {
-        int nextWord = puzzle.getNextWordToStrikethrough();
+        const int nextWord = puzzle.getNextWordToStrikethrough();
         if (nextWord >= 0) {
             const auto &info = puzzle.getWordsInfo().at(static_cast<size_t>(nextWord));
             std::cout << "\n[30 min] Striking through word: " << info.word << std::endl;
