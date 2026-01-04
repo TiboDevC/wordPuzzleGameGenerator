@@ -1,6 +1,5 @@
 #pragma once
 
-#include <iostream>
 #include <array>
 #include <random>
 #include <algorithm>
@@ -305,24 +304,6 @@ private:
         }
     }
 
-    void displayGrid()
-    {
-        std::cout << "words(" << wordsInfo.size() << "): " << std::endl;
-        for (const auto &info: wordsInfo) {
-            std::cout << "- " << info.word << std::endl;
-        }
-
-        std::cout << "full grid:" << std::endl;
-        for (uint8_t line{}; line < numberOfLines; line++)
-        {
-            for (uint8_t column{}; column < numberOfColumns; column++)
-            {
-                std::cout << gridWords.at(line, column) << " ";
-            }
-            std::cout << std::endl;
-        }
-        std::cout << std::endl;
-    }
 
 public:
     explicit PuzzleWords(const uint32_t &numberOfWordsToGenerate = 0xFFFFFFFF)
