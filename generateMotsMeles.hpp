@@ -6,6 +6,7 @@
 #include <vector>
 #include <string_view>
 #include <limits>
+#include <unordered_set>
 
 #include "wordList.hpp"
 
@@ -15,8 +16,13 @@ class PuzzleWords {
 private:
     static constexpr uint8_t invalidValue{0xFF};
     static constexpr uint8_t minWordlength{4};
-    static constexpr uint16_t maxNumberOfTriesToPickWord{5000};
+    static constexpr uint8_t maxNumberOfTriesToPickWord{100};
     static constexpr size_t potentialWordsReserveSize{100};
+    static constexpr uint16_t relaxConstraintsAfterAttempts{100};
+    static constexpr uint16_t maxTotalAttempts{1000};
+    static constexpr uint8_t maxFirstWordPlacementAttempts{10};
+    static constexpr uint8_t positionsToSamplePerWord{5};
+    static constexpr uint8_t maxWordLengthSupported{32};
 
     static std::mt19937 &getRandomGenerator() {
         thread_local std::random_device rd;
@@ -61,8 +67,11 @@ public:
 private:
     uint32_t numberOfWordsInDictionary{};
     std::vector<uint32_t> pickedUpWords{};
+    std::unordered_set<uint32_t> pickedUpWordsSet{};
     std::vector<WordInfo> wordsInfo{};
     uint32_t numberOfWordsToFind{std::numeric_limits<uint32_t>::max()};
+
+    std::array<std::vector<uint32_t>, maxWordLengthSupported> wordsByLength{};
 
     struct Grid {
         std::array<std::array<uint8_t, numberOfColumns>, numberOfLines> element{};
@@ -91,31 +100,26 @@ private:
             return;
         }
 
-        constexpr uint8_t minLineSize{1}; // Start at 1 to avoid edge (line 0)
-        constexpr uint8_t minColumnSize{1}; // Start at 1 to avoid edge (column 0)
         uint8_t maxLineSize{};
         uint8_t maxColumnSize{};
 
         switch (word.direction) {
             case Direction::Line:
-                if (word.length > numberOfColumns - 1) // -1 because we start at column 1
-                {
+                if (word.length > numberOfColumns) {
                     return;
                 }
                 maxLineSize = numberOfLines - 1;
                 maxColumnSize = numberOfColumns - word.length;
                 break;
             case Direction::Column:
-                if (word.length > numberOfLines - 1) // -1 because we start at line 1
-                {
+                if (word.length > numberOfLines) {
                     return;
                 }
                 maxLineSize = numberOfLines - word.length;
                 maxColumnSize = numberOfColumns - 1;
                 break;
             case Direction::Diagonal:
-                if (word.length > numberOfLines - 1 || word.length > numberOfColumns - 1) // -1 for both
-                {
+                if (word.length > numberOfLines || word.length > numberOfColumns) {
                     return;
                 }
                 maxLineSize = numberOfLines - word.length;
@@ -125,8 +129,8 @@ private:
                 return;
         }
 
-        std::uniform_int_distribution<uint8_t> randomLineNumber(minLineSize, maxLineSize);
-        std::uniform_int_distribution<uint8_t> randomColumnNumber(minColumnSize, maxColumnSize);
+        std::uniform_int_distribution<uint8_t> randomLineNumber(0, maxLineSize);
+        std::uniform_int_distribution<uint8_t> randomColumnNumber(0, maxColumnSize);
 
         auto &gen = getRandomGenerator();
         uint8_t numberOfTry{};
@@ -204,7 +208,7 @@ private:
             const size_t chosenWord = randomWordGen(gen);
             const uint32_t candidateWordId = listPotentialWords.at(chosenWord);
 
-            if (std::find(pickedUpWords.begin(), pickedUpWords.end(), candidateWordId) == pickedUpWords.end()) {
+            if (!pickedUpWordsSet.contains(candidateWordId)) {
                 word.id = candidateWordId;
                 return;
             }
@@ -213,26 +217,38 @@ private:
     }
 
     void findWordAccordingToConstraints(const Constraints &constraints, WordParam &word) {
-        std::vector<uint32_t> listPotentialWords;
-        listPotentialWords.reserve(potentialWordsReserveSize);
-        uint32_t wordIndex{};
         word.id = invalidValue;
 
-        for (const auto &wordView: listWords) {
-            if (wordView.length() == word.length) {
-                bool isConstraintOk{true};
-                for (const auto &constraint: constraints) {
-                    if (wordView.at(constraint.position) != constraint.letter) {
-                        isConstraintOk = false;
-                        break;
-                    }
-                }
-                if (isConstraintOk) {
-                    listPotentialWords.push_back(wordIndex);
+        // Use index to only check words of the right length
+        if (word.length >= wordsByLength.size()) {
+            return;
+        }
+
+        const auto &wordsOfLength = wordsByLength.at(word.length);
+        if (wordsOfLength.empty()) {
+            return;
+        }
+
+        std::vector<uint32_t> listPotentialWords;
+        listPotentialWords.reserve(std::min<size_t>(potentialWordsReserveSize, wordsOfLength.size()));
+
+        // Only iterate through words of the target length
+        for (const uint32_t wordIndex: wordsOfLength) {
+            const auto &wordView = listWords.at(wordIndex);
+
+            bool isConstraintOk = true;
+            for (const auto &constraint: constraints) {
+                if (wordView.at(constraint.position) != constraint.letter) {
+                    isConstraintOk = false;
+                    break;
                 }
             }
-            wordIndex++;
+
+            if (isConstraintOk) {
+                listPotentialWords.push_back(wordIndex);
+            }
         }
+
         choosePotentialWord(listPotentialWords, word);
     }
 
@@ -282,6 +298,121 @@ private:
         }
     }
 
+    [[nodiscard]] bool doesWordFit(const WordParam &word) const {
+        switch (word.direction) {
+            case Direction::Line:
+                return (word.column + word.length <= numberOfColumns);
+            case Direction::Column:
+                return (word.line + word.length <= numberOfLines);
+            case Direction::Diagonal:
+                return (word.line + word.length <= numberOfLines) &&
+                       (word.column + word.length <= numberOfColumns);
+            case Direction::Invalid:
+                return false;
+        }
+        return false;
+    }
+
+    [[nodiscard]] uint8_t countIntersections(const Grid &arrayWords, const WordParam &word) const {
+        uint8_t intersections = 0;
+
+        for (uint8_t i = 0; i < word.length; ++i) {
+            uint8_t checkLine = word.line;
+            uint8_t checkCol = word.column;
+
+            switch (word.direction) {
+                case Direction::Line:
+                    checkCol += i;
+                    break;
+                case Direction::Column:
+                    checkLine += i;
+                    break;
+                case Direction::Diagonal:
+                    checkLine += i;
+                    checkCol += i;
+                    break;
+                case Direction::Invalid:
+                    break;
+            }
+
+            if (arrayWords.at(checkLine, checkCol) != 0) {
+                intersections++;
+            }
+        }
+
+        return intersections;
+    }
+
+    bool tryPlaceWord(WordParam &word, Grid &arrayWords, const uint16_t totalAttempts) {
+        const uint8_t intersections = countIntersections(arrayWords, word);
+
+        const bool acceptPosition = pickedUpWords.empty() ||
+                                    intersections > 0 ||
+                                    totalAttempts > relaxConstraintsAfterAttempts;
+
+        if (!acceptPosition) {
+            return false;
+        }
+
+        const auto constraints = buildWordConstraints(arrayWords, word);
+        findWordAccordingToConstraints(constraints, word);
+
+        if (word.id != invalidValue) {
+            fillGridWithWord(word, arrayWords);
+            pickedUpWords.push_back(word.id);
+            pickedUpWordsSet.insert(word.id);
+            return true;
+        }
+
+        return false;
+    }
+
+    bool tryPlaceWordAtPosition(WordParam &word, Grid &arrayWords, uint8_t line, uint8_t column,
+                                const uint16_t totalAttempts) {
+        word.line = line;
+        word.column = column;
+
+        if (!doesWordFit(word)) {
+            return false;
+        }
+
+        return tryPlaceWord(word, arrayWords, totalAttempts);
+    }
+
+    bool tryPlaceFirstWord(Grid &arrayWords, uint8_t attempt, auto &gen,
+                           std::uniform_int_distribution<uint8_t> &randomDirectionGen,
+                           uint8_t maxPossibleLength) {
+        WordParam firstWord{};
+        firstWord.direction = static_cast<Direction>(randomDirectionGen(gen));
+
+        // Try different starting positions
+        if (attempt == 0) {
+            firstWord.line = numberOfLines / 2;
+            firstWord.column = numberOfColumns / 2;
+        } else {
+            std::uniform_int_distribution<uint8_t> posDist(0, std::max<uint8_t>(0, maxPossibleLength - minWordlength));
+            firstWord.line = posDist(gen);
+            firstWord.column = posDist(gen);
+        }
+
+        // Try to place a long word
+        for (uint8_t len = maxPossibleLength; len >= minWordlength; --len) {
+            firstWord.length = len;
+
+            if (doesWordFit(firstWord)) {
+                findWordAccordingToConstraints({}, firstWord);
+                if (firstWord.id != invalidValue) {
+                    fillGridWithWord(firstWord, arrayWords);
+                    pickedUpWords.push_back(firstWord.id);
+                    pickedUpWordsSet.insert(firstWord.id);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
     void completeGridWithRandomLetters(const Grid &arrayWords) {
         std::uniform_int_distribution<> randomWord('a', 'z');
         auto &gen = getRandomGenerator();
@@ -305,6 +436,13 @@ public:
                       "please increase number of lines or decrease min size of words to be found");
         numberOfWordsToFind = numberOfWordsToGenerate;
         numberOfWordsInDictionary = listWords.size();
+
+        for (uint32_t i = 0; i < numberOfWordsInDictionary; ++i) {
+            const size_t len = listWords.at(i).length();
+            if (len < wordsByLength.size()) {
+                wordsByLength.at(len).push_back(i);
+            }
+        }
     }
 
     [[nodiscard]] std::vector<std::string> getWordsOfGrid() const {
@@ -370,71 +508,63 @@ public:
     void generateGridOfWords() {
         gridWords = Grid{};
         pickedUpWords.clear();
+        pickedUpWordsSet.clear();
         wordsInfo.clear();
-        wordsInfo.reserve(numberOfWordsToFind);
+
+        const uint32_t targetWords = (numberOfWordsToFind == std::numeric_limits<uint32_t>::max())
+                                         ? numberOfLines * numberOfColumns / 4
+                                         : numberOfWordsToFind;
+        wordsInfo.reserve(targetWords);
 
         Grid arrayWords{};
 
         auto &gen = getRandomGenerator();
         std::uniform_int_distribution<uint8_t> randomDirectionGen(0, static_cast<uint8_t>(Direction::Invalid) - 1);
 
-        // Calculate max possible word length
         const uint8_t maxPossibleLength = std::max(numberOfLines, numberOfColumns);
 
-        // Try to place words starting from longest to shortest
-        for (uint8_t targetLength = maxPossibleLength;
-             targetLength >= minWordlength && pickedUpWords.size() < numberOfWordsToFind; --targetLength) {
-            constexpr uint8_t attemptsPerLength = 30;
+        // Place first word - try multiple positions if center fails
+        bool firstWordPlaced = false;
+        for (uint8_t attempt = 0; attempt < maxFirstWordPlacementAttempts && !firstWordPlaced; ++attempt) {
+            firstWordPlaced = tryPlaceFirstWord(arrayWords, attempt, gen, randomDirectionGen, maxPossibleLength);
+        }
 
-            for (uint8_t attempt = 0; attempt < attemptsPerLength && pickedUpWords.size() < numberOfWordsToFind; attempt
-                 ++) {
-                WordParam word{};
-                word.direction = static_cast<Direction>(randomDirectionGen(gen));
-                word.length = targetLength;
+        // If we couldn't place first word, abort
+        if (!firstWordPlaced) {
+            completeGridWithRandomLetters(arrayWords);
+            return;
+        }
 
-                // Try to find a valid position for this word length
-                constexpr uint8_t maxPositionTries = 100;
-                for (uint8_t posTry = 0; posTry < maxPositionTries; posTry++) {
-                    selectRandomBox(arrayWords, word);
+        // Place remaining words with aggressive limits for MCU
+        placeRemainingWords(arrayWords, targetWords, maxPossibleLength, gen, randomDirectionGen);
 
-                    if (word.line == invalidValue || word.column == invalidValue) {
-                        continue;
-                    }
+        completeGridWithRandomLetters(arrayWords);
+    }
 
-                    // Check if the word fits in the grid
-                    bool fits = false;
-                    switch (word.direction) {
-                        case Direction::Line:
-                            fits = (word.column + targetLength <= numberOfColumns);
-                            break;
-                        case Direction::Column:
-                            fits = (word.line + targetLength <= numberOfLines);
-                            break;
-                        case Direction::Diagonal:
-                            fits = (word.line + targetLength <= numberOfLines) &&
-                                   (word.column + targetLength <= numberOfColumns);
-                            break;
-                        case Direction::Invalid:
-                            break;
-                    }
+private:
+    void placeRemainingWords(Grid &arrayWords, uint32_t targetWords, uint8_t maxPossibleLength,
+                             std::mt19937 &gen, std::uniform_int_distribution<uint8_t> &randomDirectionGen) {
+        uint16_t totalAttempts = 0;
 
-                    if (!fits) {
-                        continue;
-                    }
+        std::uniform_int_distribution<uint8_t> lengthDist(minWordlength, maxPossibleLength);
+        std::uniform_int_distribution<uint8_t> lineDist(0, numberOfLines - 1);
+        std::uniform_int_distribution<uint8_t> colDist(0, numberOfColumns - 1);
 
-                    // Build constraints and find a matching word
-                    const auto constraints = buildWordConstraints(arrayWords, word);
-                    findWordAccordingToConstraints(constraints, word);
+        while (pickedUpWords.size() < targetWords && totalAttempts < maxTotalAttempts) {
+            totalAttempts++;
 
-                    if (word.id != invalidValue) {
-                        fillGridWithWord(word, arrayWords);
-                        pickedUpWords.push_back(word.id);
-                        break; // Successfully placed a word, move to next attempt
-                    }
+            WordParam word{};
+            word.direction = static_cast<Direction>(randomDirectionGen(gen));
+            word.length = lengthDist(gen);
+
+            for (uint8_t sample = 0; sample < positionsToSamplePerWord; ++sample) {
+                const uint8_t line = lineDist(gen);
+                const uint8_t column = colDist(gen);
+
+                if (tryPlaceWordAtPosition(word, arrayWords, line, column, totalAttempts)) {
+                    break; // Word placed successfully
                 }
             }
         }
-
-        completeGridWithRandomLetters(arrayWords);
     }
 };
