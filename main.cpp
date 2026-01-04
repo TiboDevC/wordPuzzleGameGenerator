@@ -7,17 +7,40 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/display.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 #include <stdio.h>
 #include <string.h>
 
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
-// Wake-up interval: 20 minutes = 1200000 milliseconds
-#define WAKE_INTERVAL_MS (20 * 60 * 1000)
+// LED colors enumeration
+enum class LedColor : uint8_t {
+	RED = 0,
+	GREEN = 1,
+	BLUE = 2,
+	NUM_COLORS = 3
+};
 
-// For initial demo, use shorter interval
-#define DEMO_INTERVAL_MS (60 * 1000) // 1 minute for testing
+// Timing constants
+namespace timing {
+	constexpr uint32_t SECONDS_PER_MINUTE = 60;
+	constexpr uint32_t MILLISECONDS_PER_SECOND = 1000;
+	constexpr uint32_t LED_CYCLE_INTERVAL_MS = MILLISECONDS_PER_SECOND;
+	constexpr uint32_t DISPLAY_UPDATE_INTERVAL_SECONDS = 60;
+	constexpr uint32_t WAKE_INTERVAL_MINUTES = 20;
+	constexpr uint32_t WAKE_INTERVAL_MS = WAKE_INTERVAL_MINUTES * SECONDS_PER_MINUTE * MILLISECONDS_PER_SECOND;
+}
+
+// Display constants
+namespace display {
+	constexpr uint16_t BORDER_THICKNESS = 5;
+}
+
+// LED GPIO specs from device tree
+static const struct gpio_dt_spec led_red = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+static const struct gpio_dt_spec led_green = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
+static const struct gpio_dt_spec led_blue = GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios);
 
 // Simple 5x7 font for text display
 static const uint8_t font5x7[][5] = {
@@ -31,6 +54,8 @@ static const uint8_t font5x7[][5] = {
 static const struct device *display_dev;
 static uint16_t display_width;
 static uint16_t display_height;
+
+static LedColor current_led_color = LedColor::RED;
 
 void draw_pixel(uint16_t x, uint16_t y, bool color) {
 	struct display_buffer_descriptor desc = {
@@ -74,17 +99,53 @@ void draw_text_simple(uint16_t x, uint16_t y, const char* text, uint8_t scale) {
 	LOG_INF("Text at (%d,%d): %s", x, y, text);
 }
 
+void set_led_color(LedColor color) {
+	constexpr int LED_OFF = 0;
+	constexpr int LED_ON = 1;
+	
+	// Turn off all LEDs first
+	gpio_pin_set_dt(&led_red, LED_OFF);
+	gpio_pin_set_dt(&led_green, LED_OFF);
+	gpio_pin_set_dt(&led_blue, LED_OFF);
+	
+	// Turn on selected color
+	switch (color) {
+		case LedColor::RED:
+			gpio_pin_set_dt(&led_red, LED_ON);
+			LOG_INF("LED: RED");
+			break;
+		case LedColor::GREEN:
+			gpio_pin_set_dt(&led_green, LED_ON);
+			LOG_INF("LED: GREEN");
+			break;
+		case LedColor::BLUE:
+			gpio_pin_set_dt(&led_blue, LED_ON);
+			LOG_INF("LED: BLUE");
+			break;
+		case LedColor::NUM_COLORS:
+			// Should never happen
+			break;
+	}
+}
+
+LedColor get_next_led_color(LedColor current) {
+	return static_cast<LedColor>((static_cast<uint8_t>(current) + 1) % static_cast<uint8_t>(LedColor::NUM_COLORS));
+}
+
 void display_hello_world() {
 	LOG_INF("Updating display with Hello World...");
+	
+	constexpr bool BLACK = false;
 
 	// Clear the display (white)
 	display_blanking_off(display_dev);
 	
 	// Draw border
-	fill_rect(0, 0, display_width, 5, false);  // Top
-	fill_rect(0, 0, 5, display_height, false); // Left
-	fill_rect(display_width - 5, 0, 5, display_height, false); // Right
-	fill_rect(0, display_height - 5, display_width, 5, false); // Bottom
+	const uint16_t border = display::BORDER_THICKNESS;
+	fill_rect(0, 0, display_width, border, BLACK);  // Top
+	fill_rect(0, 0, border, display_height, BLACK); // Left
+	fill_rect(display_width - border, 0, border, display_height, BLACK); // Right
+	fill_rect(0, display_height - border, display_width, border, BLACK); // Bottom
 
 	// For now, just log the text we would display
 	// Full font rendering would be implemented later
@@ -120,6 +181,19 @@ int main() {
 	LOG_INF("Board: Seeed Studio XIAO nRF52840");
 	LOG_INF("Display: 7.5\" E-Ink 800x480 GDEW075T7");
 	
+	// Initialize LEDs
+	if (!gpio_is_ready_dt(&led_red) || !gpio_is_ready_dt(&led_green) || !gpio_is_ready_dt(&led_blue)) {
+		LOG_ERR("LED GPIO devices not ready!");
+		return -1;
+	}
+	
+	gpio_pin_configure_dt(&led_red, GPIO_OUTPUT_INACTIVE);
+	gpio_pin_configure_dt(&led_green, GPIO_OUTPUT_INACTIVE);
+	gpio_pin_configure_dt(&led_blue, GPIO_OUTPUT_INACTIVE);
+	
+	// Set initial LED color
+	set_led_color(current_led_color);
+	
 	// Get the display device
 	display_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
 	
@@ -139,14 +213,20 @@ int main() {
 	LOG_INF("Pixel format: %d, Screen info: %d", 
 			caps.current_pixel_format, caps.screen_info);
 	
-	// Main loop: wake up, update display, sleep
+	// Main loop: wake up, update display, cycle LED
 	while (true) {
 		// Display Hello World on the e-ink screen
 		display_hello_world();
 		
-		// Enter deep sleep for 20 minutes
-		// Using demo interval (1 minute) for testing
-		enter_deep_sleep(DEMO_INTERVAL_MS);
+		// Cycle LED color every second to show activity
+		// RED -> GREEN -> BLUE -> repeat
+		for (uint32_t i = 0; i < timing::DISPLAY_UPDATE_INTERVAL_SECONDS; i++) {
+			current_led_color = get_next_led_color(current_led_color);
+			set_led_color(current_led_color);
+			k_msleep(timing::LED_CYCLE_INTERVAL_MS);
+		}
+		
+		LOG_INF("Display update cycle complete");
 	}
 	
 	return 0;
